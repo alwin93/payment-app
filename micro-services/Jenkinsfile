@@ -159,7 +159,7 @@ pipeline {
                     // FIX #1/#2: .env comes from a Jenkins "Secret file" credential, not from git
                     withCredentials([file(credentialsId: 'payment-app-env', variable: 'ENV_FILE')]) {
                         sh 'cp "$ENV_FILE" .env'
-                        sh 'docker-compose up -d --build'
+                        sh 'docker compose up -d --build'
                     }
                 }
             }
@@ -173,7 +173,7 @@ pipeline {
                                      file(credentialsId: 'smtp-password', variable: 'SMTP_PW')]) {
                         sh 'cp "$MON_ENV" .env'
                         sh 'mkdir -p secrets && cp "$SMTP_PW" secrets/smtp_password'
-                        sh 'docker-compose up -d'
+                        sh 'docker compose up -d'
                     }
                 }
             }
