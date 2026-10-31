@@ -28,10 +28,10 @@ pipeline {
         stage('Dependency Install') {
             steps {
                 dir('micro-services/backend/auth_service') {
-                    sh 'python3 -m venv venv && . venv/bin/activate && pip install -r requirements.txt'
+                    sh 'python3.9 -m venv venv && . venv/bin/activate && pip install -r requirements.txt'
                 }
                 dir('micro-services/backend/payment_service') {
-                    sh 'python3 -m venv venv && . venv/bin/activate && pip install -r requirements.txt'
+                    sh 'python3.9 -m venv venv && . venv/bin/activate && pip install -r requirements.txt'
                 }
                 // package.json lives in frontend/, not frontend/src
                 dir('micro-services/frontend') {
@@ -89,7 +89,7 @@ pipeline {
                     services.each { s ->
                         dir(s.dir) {
                             sh """
-                              python3 -m venv venv
+                              python3.9 -m venv venv
                               . venv/bin/activate && pip install -r requirements.txt
                               export PYTHONPATH="${env.WORKSPACE}/micro-services/backend:\$PYTHONPATH"
                               uvicorn src.main:app --host 0.0.0.0 --port ${s.port} &
