@@ -84,7 +84,7 @@ pipeline {
                     // Also: kill only the PID we started instead of `pkill -f uvicorn`.
                     def services = [
                         [dir: 'micro-services/backend/auth_service',    port: 8000, health: '/health'],
-                        [dir: 'micro-services/backend/payment_service', port: 8001, health: '/api/payments/health']
+                        [dir: 'micro-services/backend/payment_service', port: 8001, health: '/openapi.json']
                     ]
                     services.each { s ->
                         dir(s.dir) {
