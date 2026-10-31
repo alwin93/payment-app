@@ -13,7 +13,6 @@ pipeline {
         // FIX #2: no hardcoded passwords. credentials() creates NEXUS_USR/NEXUS_PSW and
         // DOCKERHUB_USR/DOCKERHUB_PSW, and masks them in the console log.
         NEXUS     = credentials('nexus-creds')          // Username+password credential
-        DOCKERHUB = credentials('dockerhub-creds')      // Username+password credential
     }
 
     stages {
@@ -143,12 +142,6 @@ pipeline {
                         sh "docker push ${env.NEXUS_REGISTRY}/${env.NEXUS_REPO}/${n}:${env.VERSION}"
                     }
 
-                    // Optional: Docker Hub
-                    sh 'echo "$DOCKERHUB_PSW" | docker login -u "$DOCKERHUB_USR" --password-stdin'
-                    names.each { n ->
-                        sh "docker tag ${n}:${env.VERSION} ${env.DOCKERHUB_USR}/${n}:${env.VERSION}"
-                        sh "docker push ${env.DOCKERHUB_USR}/${n}:${env.VERSION}"
-                    }
                 }
             }
         }
