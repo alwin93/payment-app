@@ -1,0 +1,190 @@
+pipeline {
+    agent any
+    tools {
+        nodejs 'node20.18'
+        jdk 'JDK17'
+    }
+    environment {
+        EC2_IP         = '<EC2_PUBLIC_IP>'              // set to your EC2 IP
+        NEXUS_REGISTRY = "${EC2_IP}:8082"
+        NEXUS_REPO     = 'payment-app'
+        SONAR_SCANNER  = '/opt/sonar-scanner/sonar-scanner-6.2.1.4610-linux-x64/bin/sonar-scanner'
+
+        // FIX #2: no hardcoded passwords. credentials() creates NEXUS_USR/NEXUS_PSW and
+        // DOCKERHUB_USR/DOCKERHUB_PSW, and masks them in the console log.
+        NEXUS     = credentials('nexus-creds')          // Username+password credential
+        DOCKERHUB = credentials('dockerhub-creds')      // Username+password credential
+    }
+
+    stages {
+        stage('Git Checkout') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/www-domain/payment-app.git',
+                    credentialsId: 'git-hook-token'
+            }
+        }
+
+        stage('Dependency Install') {
+            steps {
+                dir('micro-services/backend/auth_service') {
+                    sh 'python3 -m venv venv && . venv/bin/activate && pip install -r requirements.txt'
+                }
+                dir('micro-services/backend/payment_service') {
+                    sh 'python3 -m venv venv && . venv/bin/activate && pip install -r requirements.txt'
+                }
+                // package.json lives in frontend/, not frontend/src
+                dir('micro-services/frontend') {
+                    sh 'npm install'
+                }
+            }
+        }
+
+        stage('Backend SonarQube Analysis') {
+            steps {
+                dir('micro-services/backend') {
+                    withCredentials([string(credentialsId: 'sonar-url', variable: 'SONARQUBE_URL'),
+                                     string(credentialsId: 'sonar-token-backend', variable: 'SONAR_TOKEN')]) {
+                        sh '''
+                          $SONAR_SCANNER \
+                            -Dsonar.projectKey=payment-app-backend \
+                            -Dsonar.sources=auth_service/src,common,payment_service/src \
+                            -Dsonar.exclusions=**/venv/**,**/__pycache__/**,**/bin/**,**/lib/python3.*/site-packages/** \
+                            -Dsonar.host.url=$SONARQUBE_URL \
+                            -Dsonar.token=$SONAR_TOKEN
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Frontend SonarQube Analysis') {
+            steps {
+                dir('micro-services/frontend') {
+                    withCredentials([string(credentialsId: 'sonar-url', variable: 'SONARQUBE_URL'),
+                                     string(credentialsId: 'sonar-token-frontend', variable: 'SONAR_TOKEN')]) {
+                        sh '''
+                          $SONAR_SCANNER \
+                            -Dsonar.projectKey=payment-app-frontend \
+                            -Dsonar.sources=src,nginx,public \
+                            -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/*.spec.ts \
+                            -Dsonar.host.url=$SONARQUBE_URL \
+                            -Dsonar.token=$SONAR_TOKEN
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Backend Build') {
+            steps {
+                script {
+                    // FIX #3: health checks use localhost, not the public IP, so the stage
+                    // doesn't depend on security-group rules or hairpin routing.
+                    // Also: kill only the PID we started instead of `pkill -f uvicorn`.
+                    def services = [
+                        [dir: 'micro-services/backend/auth_service',    port: 8000, health: '/health'],
+                        [dir: 'micro-services/backend/payment_service', port: 8001, health: '/api/payments/health']
+                    ]
+                    services.each { s ->
+                        dir(s.dir) {
+                            sh """
+                              python3 -m venv venv
+                              . venv/bin/activate && pip install -r requirements.txt
+                              export PYTHONPATH="${env.WORKSPACE}/micro-services/backend:\$PYTHONPATH"
+                              uvicorn src.main:app --host 0.0.0.0 --port ${s.port} &
+                              echo \$! > uvicorn.pid
+                              sleep 10
+                              curl --fail http://localhost:${s.port}${s.health} || (kill \$(cat uvicorn.pid); exit 1)
+                              kill \$(cat uvicorn.pid)
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Frontend Build') {
+            steps {
+                dir('micro-services/frontend') {
+                    sh 'npm install'
+                    sh 'npm run build --omit=dev'
+                }
+            }
+        }
+
+        stage('Build Docker Images') {
+            steps {
+                script {
+                    env.VERSION = readFile('micro-services/version.txt').trim()
+                    def images = [
+                        [dir: 'micro-services/backend/auth_service',    name: 'backend-auth'],
+                        [dir: 'micro-services/backend/payment_service', name: 'backend-payment'],
+                        [dir: 'micro-services/frontend',                name: 'frontend']
+                    ]
+                    images.each { img ->
+                        dir(img.dir) {
+                            sh "docker build --no-cache -t ${img.name}:${env.VERSION} -t ${img.name}:latest ."
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Image Push') {
+            steps {
+                script {
+                    def names = ['backend-auth', 'backend-payment', 'frontend']
+
+                    // Login with single-quoted sh so the secret is never Groovy-interpolated (FIX #2)
+                    sh 'echo "$NEXUS_PSW" | docker login $NEXUS_REGISTRY -u "$NEXUS_USR" --password-stdin'
+                    names.each { n ->
+                        sh "docker tag ${n}:${env.VERSION} ${env.NEXUS_REGISTRY}/${env.NEXUS_REPO}/${n}:${env.VERSION}"
+                        sh "docker push ${env.NEXUS_REGISTRY}/${env.NEXUS_REPO}/${n}:${env.VERSION}"
+                    }
+
+                    // Optional: Docker Hub
+                    sh 'echo "$DOCKERHUB_PSW" | docker login -u "$DOCKERHUB_USR" --password-stdin'
+                    names.each { n ->
+                        sh "docker tag ${n}:${env.VERSION} ${env.DOCKERHUB_USR}/${n}:${env.VERSION}"
+                        sh "docker push ${env.DOCKERHUB_USR}/${n}:${env.VERSION}"
+                    }
+                }
+            }
+        }
+
+        stage('Deploy Services') {
+            steps {
+                dir('micro-services') {
+                    // FIX #1/#2: .env comes from a Jenkins "Secret file" credential, not from git
+                    withCredentials([file(credentialsId: 'payment-app-env', variable: 'ENV_FILE')]) {
+                        sh 'cp "$ENV_FILE" .env'
+                        sh 'docker-compose up -d --build'
+                    }
+                }
+            }
+        }
+
+        stage('Monitor Services') {
+            steps {
+                dir('micro-services/prometheus') {
+                    // FIX #1: Grafana creds + Gmail App Password injected at deploy time
+                    withCredentials([file(credentialsId: 'monitoring-env', variable: 'MON_ENV'),
+                                     file(credentialsId: 'smtp-password', variable: 'SMTP_PW')]) {
+                        sh 'cp "$MON_ENV" .env'
+                        sh 'mkdir -p secrets && cp "$SMTP_PW" secrets/smtp_password'
+                        sh 'docker-compose up -d'
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            sh 'docker logout $NEXUS_REGISTRY || true'
+            sh 'docker logout || true'
+            cleanWs()
+        }
+    }
+}

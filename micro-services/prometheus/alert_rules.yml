@@ -1,0 +1,24 @@
+# FIX #5: referenced by prometheus.yml but missing in the PDF
+groups:
+  - name: payment-app-alerts
+    rules:
+      - alert: InstanceDown
+        expr: up == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Target {{ $labels.job }} on {{ $labels.instance }} is down"
+
+      - alert: NginxHighCPU
+        expr: 100 * rate(container_cpu_usage_seconds_total{image=~".*nginx.*"}[5m]) > 40
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "nginx container CPU above 40%"
+
+      - alert: HostHighMemory
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 85
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Host memory usage above 85%"

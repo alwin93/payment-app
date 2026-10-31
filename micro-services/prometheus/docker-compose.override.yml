@@ -1,0 +1,6 @@
+services:
+  prometheus:    { restart: unless-stopped }
+  node_exporter: { restart: unless-stopped }
+  cadvisor:      { restart: unless-stopped }
+  alertmanager:  { restart: unless-stopped }
+  grafana:       { restart: unless-stopped }

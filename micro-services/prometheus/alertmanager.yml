@@ -1,0 +1,20 @@
+global:
+  smtp_smarthost: 'smtp.gmail.com:587'
+  smtp_from: 'your.address@gmail.com'           # replace
+  smtp_auth_username: 'your.address@gmail.com'  # replace
+  # FIX #1: password read from a mounted file (not in git). Use a Gmail App Password.
+  smtp_auth_password_file: '/etc/alertmanager/secrets/smtp_password'
+  # FIX #4: Gmail on 587 requires STARTTLS
+  smtp_require_tls: true
+
+route:
+  group_by: ['alertname']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 1h
+  receiver: 'email-receiver'
+
+receivers:
+  - name: 'email-receiver'
+    email_configs:
+      - to: 'your.address@gmail.com'            # replace
