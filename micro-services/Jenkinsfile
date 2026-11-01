@@ -5,8 +5,7 @@ pipeline {
         jdk 'JDK17'
     }
     environment {
-        EC2_IP         = '<EC2_PUBLIC_IP>'              // set to your EC2 IP
-        NEXUS_REGISTRY = "${EC2_IP}:8082"
+        NEXUS_REGISTRY = 'localhost:8082'
         NEXUS_REPO     = 'payment-app'
         SONAR_SCANNER  = '/opt/sonar-scanner/sonar-scanner-6.2.1.4610-linux-x64/bin/sonar-scanner'
 
