@@ -17,9 +17,7 @@ pipeline {
     stages {
         stage('Git Checkout') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/alwin93/payment-app.git',
-                    credentialsId: 'git-hook-token'
+                checkout scm
             }
         }
 
