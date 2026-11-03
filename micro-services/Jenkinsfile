@@ -18,7 +18,7 @@ pipeline {
         stage('Git Checkout') {
             steps {
                 git branch: 'main',
-                    url: 'https://github.com/www-domain/payment-app.git',
+                    url: 'https://github.com/alwin93/payment-app.git',
                     credentialsId: 'git-hook-token'
             }
         }
